@@ -45,6 +45,7 @@ func Register(c *gin.Context) {
 	allowedRoles := map[string]bool{
 		"user":    true,
 		"creator": true,
+		"admin":   true,
 	}
 
 	if !allowedRoles[role] {
