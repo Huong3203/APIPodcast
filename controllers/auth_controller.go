@@ -16,6 +16,7 @@ type RegisterInput struct {
 	Email   string `json:"email" binding:"required,email"`
 	MatKhau string `json:"mat_khau" binding:"required,min=6"`
 	HoTen   string `json:"ho_ten" binding:"required"`
+	VaiTro  string `json:"vai_tro"` // Cho phép user tự chọn, nhưng sẽ validate
 }
 
 func Register(c *gin.Context) {
@@ -27,14 +28,31 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Check email đã tồn tại chưa
+	// Kiểm tra email đã tồn tại
 	var existing models.NguoiDung
 	if err := config.DB.Where("email = ?", input.Email).First(&existing).Error; err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Email đã được sử dụng"})
 		return
 	}
 
-	// Hash mật khẩu
+	// Validate vai_tro
+	role := input.VaiTro
+	if role == "" {
+		role = "user" // mặc định
+	}
+
+	// Chỉ cho phép các vai trò hợp lệ
+	allowedRoles := map[string]bool{
+		"user":    true,
+		"creator": true,
+	}
+
+	if !allowedRoles[role] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Vai trò không hợp lệ"})
+		return
+	}
+
+	// Mã hoá mật khẩu
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.MatKhau), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể mã hoá mật khẩu"})
@@ -47,7 +65,7 @@ func Register(c *gin.Context) {
 		Email:    input.Email,
 		MatKhau:  string(hashedPassword),
 		HoTen:    input.HoTen,
-		VaiTro:   "user",
+		VaiTro:   role,
 		KichHoat: true,
 	}
 
@@ -56,7 +74,9 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	newUser.MatKhau = "" // Ẩn mật khẩu
+	// Không trả mật khẩu
+	newUser.MatKhau = ""
+
 	c.JSON(http.StatusCreated, newUser)
 }
 
@@ -85,14 +105,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// ✅ Tạo JWT token
+	// Tạo JWT
 	token, err := utils.GenerateToken(user.ID, user.VaiTro)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể tạo token"})
 		return
 	}
 
-	// Trả về token và thông tin người dùng (ẩn mật khẩu)
+	// Trả về token + thông tin user
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
