@@ -12,11 +12,12 @@ import (
 	"github.com/Huong3203/APIPodcast/utils"
 )
 
+// ------------------ REGISTER ------------------
+
 type RegisterInput struct {
 	Email   string `json:"email" binding:"required,email"`
 	MatKhau string `json:"mat_khau" binding:"required,min=6"`
 	HoTen   string `json:"ho_ten" binding:"required"`
-	VaiTro  string `json:"vai_tro"` // Cho phép user tự chọn, nhưng sẽ validate
 }
 
 func Register(c *gin.Context) {
@@ -28,32 +29,14 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Kiểm tra email đã tồn tại
+	// Check email tồn tại
 	var existing models.NguoiDung
 	if err := config.DB.Where("email = ?", input.Email).First(&existing).Error; err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Email đã được sử dụng"})
 		return
 	}
 
-	// Validate vai_tro
-	role := input.VaiTro
-	if role == "" {
-		role = "user" // mặc định
-	}
-
-	// Chỉ cho phép các vai trò hợp lệ
-	allowedRoles := map[string]bool{
-		"user":    true,
-		"creator": true,
-		"admin":   true,
-	}
-
-	if !allowedRoles[role] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Vai trò không hợp lệ"})
-		return
-	}
-
-	// Mã hoá mật khẩu
+	// Hash mật khẩu
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.MatKhau), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể mã hoá mật khẩu"})
@@ -66,7 +49,7 @@ func Register(c *gin.Context) {
 		Email:    input.Email,
 		MatKhau:  string(hashedPassword),
 		HoTen:    input.HoTen,
-		VaiTro:   role,
+		VaiTro:   "user",
 		KichHoat: true,
 	}
 
@@ -75,11 +58,12 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Không trả mật khẩu
 	newUser.MatKhau = ""
 
 	c.JSON(http.StatusCreated, newUser)
 }
+
+// ------------------ LOGIN ------------------
 
 type LoginInput struct {
 	Email   string `json:"email" binding:"required,email"`
@@ -89,6 +73,7 @@ type LoginInput struct {
 func Login(c *gin.Context) {
 	var input LoginInput
 
+	// Parse JSON
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -106,20 +91,20 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Tạo JWT
+	// Tạo JWT token
 	token, err := utils.GenerateToken(user.ID, user.VaiTro)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể tạo token"})
 		return
 	}
 
-	// Trả về token + thông tin user
+	// Trả về token + user info
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":      user.ID,
-			"email":   user.Email,
-			"ho_ten":  user.HoTen,
+			"id":     user.ID,
+			"email":  user.Email,
+			"ho_ten": user.HoTen,
 			"vai_tro": user.VaiTro,
 		},
 	})
